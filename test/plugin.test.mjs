@@ -35,11 +35,10 @@ function setup(config = {}) {
   const stateFile = join(dir, 'state');
   const ctx = fakeCtx();
   apply(ctx, {
-    backend: 'loopbrew',
+    backend: 'state-file',
     stateFile,
     idleDelayMs: 0,
     sweepMs: 60_000,
-    daemon: { autoStart: false },
     ...config,
   });
   return { dir, stateFile, ctx, read: () => readFileSync(stateFile, 'utf8').trim() };
@@ -122,7 +121,7 @@ test('plugin: idle drop is debounced and cancellable', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-lamp-test-'));
   const stateFile = join(dir, 'state');
   const ctx = fakeCtx();
-  apply(ctx, { backend: 'loopbrew', stateFile, idleDelayMs: 60, sweepMs: 60_000, daemon: { autoStart: false } });
+  apply(ctx, { backend: 'state-file', stateFile, idleDelayMs: 60, sweepMs: 60_000 });
   try {
     ctx.emit('session/event', { id: 's1' }, { type: 'turn/start', data: { turn: 1 } });
     assert.equal(readFileSync(stateFile, 'utf8').trim(), WORKING);
@@ -144,7 +143,7 @@ test('plugin: dryRun never writes the state file', () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-lamp-test-'));
   const stateFile = join(dir, 'state');
   const ctx = fakeCtx();
-  apply(ctx, { stateFile, idleDelayMs: 0, sweepMs: 60_000, daemon: { autoStart: false }, dryRun: true });
+  apply(ctx, { backend: 'state-file', stateFile, idleDelayMs: 0, sweepMs: 60_000, dryRun: true });
   try {
     ctx.emit('session/event', { id: 's1' }, { type: 'turn/start', data: { turn: 1 } });
     assert.throws(() => readFileSync(stateFile, 'utf8'), { code: 'ENOENT' });

@@ -11,17 +11,17 @@ DSH host 会话事件 (session/event)
   -> dsh-lamp (Cordis host plugin)
        -> 状态机 (working / input / idle / off)
        -> 后端:
-            ksanaka  → 写入已安装的 ksanaka codex-lamp StateStore，其 BLE daemon 驱动灯（默认）
-            loopbrew → 写 /tmp/codex_lamp_state，loopbrew daemon 驱动灯
+            ksanaka   → 写入已安装的 ksanaka codex-lamp StateStore，其 BLE daemon 驱动灯（默认）
+            state-file → 原子写状态文件（默认 /tmp/dsh_lamp_state），供任何消费者读取
 ```
 
 ## 后端选择（`backend` 配置）
 
 | 后端 | 输出 | 何时用 |
 | --- | --- | --- |
-| `auto`（默认） | 检测到 ksanaka 安装（`~/Library/Application Support/CodexLamp/config.json`）就用 ksanaka，否则 loopbrew | 大多数机器 |
+| `auto`（默认） | 检测到 ksanaka 安装（`~/Library/Application Support/CodexLamp/config.json`）就用 ksanaka，否则 state-file | 大多数机器 |
 | `ksanaka` | 通过 venv python 调用已装的 `codex_lamp.state.StateStore`（`update/remove` 会话记录，daemon 按 `config.json` 的 priority 聚合） | 已装 [ksanaka/codex-lamp](https://github.com/ksanaka/codex-lamp) |
-| `loopbrew` | 原子写 `/tmp/codex_lamp_state`（daemon 监听该文件） | 用 [loopbrew/codex-lamp](https://github.com/loopbrew/codex-lamp) 的 daemon |
+| `state-file` | 原子写状态文件（默认 `/tmp/dsh_lamp_state`，一行 `working\|idle\|input\|off`） | 不装任何 codex-lamp，只想要状态输出 |
 | `none` | 只记日志 | 调试/预览 |
 
 ksanaka 后端复用你已装的 daemon 与 BLE 连接（`<home>/venv/bin/python3 -m codex_lamp.daemon`），
@@ -30,20 +30,19 @@ ksanaka 后端复用你已装的 daemon 与 BLE 连接（`<home>/venv/bin/python
 ## 没有 codex-lamp 也能用吗？
 
 **能。** `dsh-lamp` 本身不依赖任何 codex-lamp 安装——它只负责「把 DSH 会话事件变成状态」，
-灯控那半边（daemon + BLE + Moonside 灯）才是 codex-lamp 的事。按灯控程度分三档：
+灯控那半边（daemon + BLE + Moonside 灯）才是 codex-lamp 的事。两种用法：
 
 | 场景 | 行为 | 你需要做什么 |
 | --- | --- | --- |
-| **完全不装 codex-lamp** | `auto` 探测不到 ksanaka 安装，自动退回 `loopbrew` 后端，把状态写进 `/tmp/codex_lamp_state`（宿主日志会提示 "no codex-lamp daemon found; writing state file only"） | 什么都不用装。状态文件照样产生，可被任何程序消费：`tail -f /tmp/codex_lamp_state`、喂给自定义脚本、或者以后再加灯 |
-| **想点亮 Moonside 灯（轻量）** | 同上，但把 [loopbrew/codex-lamp](https://github.com/loopbrew/codex-lamp) 的单个 `codex_lamp_daemon.py` 放到 `~/.codex/codex-lamp/`（或设 `CODEX_LAMP_DAEMON` 指向它），插件会自动拉起 | `python3 -m pip install bleak` + 通电的 Moonside 灯 + macOS 蓝牙权限 |
-| **想点亮灯 + 顺便给 Codex 用** | 装 [ksanaka/codex-lamp](https://github.com/ksanaka/codex-lamp)，`auto` 探测到后走 ksanaka 后端，DSH 与 Codex 共用一盏灯 | 按 codex-lamp 的安装说明装好即可 |
+| **不装 codex-lamp** | `auto` 探测不到 ksanaka 安装，自动退回 `state-file` 后端，把状态写进 `/tmp/dsh_lamp_state` | 什么都不用装。状态文件照样产生，可被任何程序消费：`tail -f /tmp/dsh_lamp_state`、喂给自定义脚本、或者以后再加灯 |
+| **点亮 Moonside 灯** | 装 [ksanaka/codex-lamp](https://github.com/ksanaka/codex-lamp)，`auto` 探测到后走 ksanaka 后端，DSH 与 Codex 共用一盏灯 | 按 codex-lamp 的安装说明装好即可 |
 
 补充说明：
 
 - `auto` 探测的是 `~/Library/Application Support/CodexLamp/`（macOS 默认）下是否存在
-  `config.json` 或 `sessions/`。Linux 用户没有这个目录，会自然落到 loopbrew 后端，
+  `config.json` 或 `sessions/`。Linux 用户没有这个目录，会自然落到 state-file 后端，
   也可用 `CODEX_LAMP_HOME` 或 `ksanaka.home` 配置指定位置。
-- 想要某条路径，也可以显式 `backend: ksanaka | loopbrew | none`，不依赖探测。
+- 想要某条路径，也可以显式 `backend: ksanaka | state-file | none`，不依赖探测。
 - 无论哪档，插件都 fail-open：灯控半边缺失/失败绝不影响 DSH 本身。
 
 ## 状态映射
@@ -89,8 +88,8 @@ dsh plugin --profile web add /absolute/path/to/dsh-lamp
     - id: lamp
       name: dsh-lamp
       config:
-        # 状态文件路径（默认 $CODEX_LAMP_STATE_FILE 或 /tmp/codex_lamp_state）
-        stateFile: /tmp/codex_lamp_state
+        # state-file 后端的状态文件路径（默认 $DSH_LAMP_STATE_FILE 或 /tmp/dsh_lamp_state）
+        stateFile: /tmp/dsh_lamp_state
         # 等待审批/提问时点紫色（input），忙碌时 BEAT2（working）……
         # 其余配置见下方「配置项」
 ```
@@ -100,10 +99,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-lamp
 - **ksanaka（本机默认路径）**：什么都不用做——插件自动找到
   `~/Library/Application Support/CodexLamp/venv/bin/python3`，按需拉起
   `python -m codex_lamp.daemon` 驱动你的灯。可配 `ksanaka.home` / `ksanaka.python` 覆盖。
-- **loopbrew**：把 `codex-lamp/codex_lamp_daemon.py` 放到
-  `~/.codex/codex-lamp/codex_lamp_daemon.py`（插件会自动找到并拉起）；或
-  设置环境变量 `CODEX_LAMP_DAEMON=/path/to/codex_lamp_daemon.py`；或
-  完全不装 daemon：插件仍会写状态文件，你可以用任何方式消费它。
+- **只用 state-file**：不需要 daemon，状态文件照写，用任何方式消费它。
 
 ### 4. 重启
 
@@ -119,9 +115,8 @@ dsh web
 cat ~/Library/Application\ Support/CodexLamp/effective_state.json
 tail -f ~/Library/Application\ Support/CodexLamp/logs/daemon.log
 
-# loopbrew 后端：
-cat /tmp/codex_lamp_state
-tail -f /tmp/codex_lamp_daemon.log
+# state-file 后端：
+cat /tmp/dsh_lamp_state
 ```
 
 ## 配置项
@@ -130,20 +125,15 @@ tail -f /tmp/codex_lamp_daemon.log
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
-| `backend` | `auto` | `auto` / `ksanaka` / `loopbrew` / `none` |
+| `backend` | `auto` | `auto` / `ksanaka` / `state-file` / `none` |
 | `priority` | `[input, working, idle, off]` | 聚合优先级，越靠前越优先 |
 | `idleDelayMs` | `800` | working→idle 的防抖毫秒数（新事件会取消） |
 | `staleMs` | `1800000` | 会话静默多久后清出跟踪（30 分钟） |
 | `sweepMs` | `60000` | 清理扫描间隔 |
 | `dryRun` | `false` | 只打印状态转换，不写任何后端 |
-| `stateFile` | `$CODEX_LAMP_STATE_FILE` 或 `/tmp/codex_lamp_state` | 仅 loopbrew 后端 |
+| `stateFile` | `$DSH_LAMP_STATE_FILE` 或 `/tmp/dsh_lamp_state` | 仅 state-file 后端 |
 | `ksanaka.home` | `$CODEX_LAMP_HOME` 或 `~/Library/Application Support/CodexLamp` | ksanaka 数据根 |
 | `ksanaka.python` | `<home>/venv/bin/python3` | 装有 `codex_lamp` 的解释器 |
-| `daemon.path` | 自动探测 | 仅 loopbrew：daemon 脚本路径（也认 `CODEX_LAMP_DAEMON`） |
-| `daemon.autoStart` | `true` | 仅 loopbrew：缺失时自动拉起 daemon |
-| `daemon.pidFile` | `/tmp/codex_lamp_daemon.pid` | 仅 loopbrew |
-| `daemon.logFile` | `/tmp/codex_lamp_daemon.log` | 仅 loopbrew |
-| `daemon.python` | `python3` | 仅 loopbrew：装有 `bleak` 的解释器 |
 
 示例（强制 ksanaka）：
 
@@ -167,7 +157,7 @@ tail -f /tmp/codex_lamp_daemon.log
 - ksanaka 后端不重实现锁与聚合：`python/ksanaka_bridge.py` 用你已装的 venv python 直接调
   `codex_lamp.state.StateStore`（fcntl 锁、优先级聚合、stale 清理全是原版行为），
   并在 daemon 未运行时用 `python -m codex_lamp.daemon` 拉起它。
-- `lib/state.js` 是纯函数状态机（可单测）；`lib/backend.js` 统一 ksanaka/loopbrew/none 后端；
+- `lib/state.js` 是纯函数状态机（可单测）；`lib/backend.js` 统一 ksanaka/state-file/none 后端；
   `lib/ksanaka.js` 负责桥接与 daemon 生命周期；`lib/index.js` 是 Cordis 插件壳。
 
 ## 验证
@@ -189,8 +179,8 @@ node --test
 # demo 会先等待 daemon 连上灯（--hold 默认 9s，冷启动的 daemon 需要约 6s 扫描+连接）
 node scripts/demo.mjs --backend ksanaka
 
-# loopbrew：只验证状态文件管线
-node scripts/demo.mjs --backend loopbrew --state-file /tmp/dsh_lamp_demo_state
+# state-file：只验证状态文件管线
+node scripts/demo.mjs --backend state-file --state-file /tmp/dsh_lamp_demo_state
 ```
 
 输出示例：
@@ -223,7 +213,7 @@ dsh --profile web --dump-config | grep -A3 'id: lamp'
 
 # 3. 打开一个会话 → 发消息 → 等它问你要审批
 cat ~/Library/Application\ Support/CodexLamp/effective_state.json   # ksanaka
-# 或（loopbrew）: cat /tmp/codex_lamp_state
+# 或（state-file）: cat /tmp/dsh_lamp_state
 ```
 
 | 你的操作 | 预期状态 |

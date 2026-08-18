@@ -1,7 +1,7 @@
 {
   "name": "dsh-lamp",
   "version": "0.1.0",
-  "description": "DeepSeek Harness host plugin: maps session lifecycle events to a codex-lamp state file so a Moonside Halo (or any consumer of the state file) lights up with agent activity.",
+  "description": "DeepSeek Harness host plugin: maps DSH session events to a codex-lamp (Moonside Halo) ambient light via the ksanaka StateStore or a plain state file.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

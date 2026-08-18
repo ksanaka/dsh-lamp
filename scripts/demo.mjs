@@ -4,19 +4,18 @@
  *
  * Applies the real plugin against a scripted conversation timeline and prints
  * the observable lamp state after every step, so you can verify the whole
- * pipeline — event -> state machine -> backend (-> ksanaka StateStore /
- * loopbrew state file -> daemon -> lamp) — without restarting dsh web.
+ * pipeline — event -> state machine -> backend (ksanaka StateStore / state
+ * file -> daemon -> lamp) — without restarting dsh web.
  *
  * Usage:
- *   node scripts/demo.mjs [--backend auto|ksanaka|loopbrew|none]
- *                         [--state-file PATH] [--daemon PATH] [--ksanaka-home PATH]
- *                         [--delay MS]
+ *   node scripts/demo.mjs [--backend auto|ksanaka|state-file|none]
+ *                         [--state-file PATH] [--ksanaka-home PATH]
+ *                         [--ksanaka-python PATH] [--delay MS] [--hold MS]
  *
  *   --backend       backend to exercise (default: auto — ksanaka when its
  *                   install is detected on this machine)
- *   --state-file    loopbrew backend: state file to write
- *                   (default $CODEX_LAMP_STATE_FILE or /tmp/codex_lamp_state)
- *   --daemon        loopbrew backend: path to codex_lamp_daemon.py
+ *   --state-file    state-file backend: where to write the state
+ *                   (default $DSH_LAMP_STATE_FILE or /tmp/dsh_lamp_state)
  *   --ksanaka-home  ksanaka backend: data root (default $CODEX_LAMP_HOME or
  *                   ~/Library/Application Support/CodexLamp)
  *   --ksanaka-python ksanaka backend: interpreter with codex_lamp installed
@@ -36,21 +35,22 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { apply } from '../lib/index.js';
 import { STATES } from '../lib/state.js';
-import { defaultStateFile } from '../lib/daemon.js';
+import { defaultStateFile } from '../lib/statefile.js';
 import { resolveKsanakaHome } from '../lib/ksanaka.js';
 
 const { OFF, IDLE, WORKING, INPUT } = STATES;
 
 function usage() {
-  console.log(`Usage: node scripts/demo.mjs [--backend auto|ksanaka|loopbrew|none]
-                          [--state-file PATH] [--daemon PATH] [--ksanaka-home PATH]
-                          [--delay MS]
+  console.log(`Usage: node scripts/demo.mjs [--backend auto|ksanaka|state-file|none]
+                          [--state-file PATH] [--ksanaka-home PATH]
+                          [--ksanaka-python PATH] [--delay MS] [--hold MS]
 
-  --backend       backend to exercise (default: auto — ksanaka when detected)
-  --state-file    loopbrew: state file (default: ${defaultStateFile()})
-  --daemon        loopbrew: codex_lamp_daemon.py path (starts it if not running)
-  --ksanaka-home  ksanaka: data root (default: ${resolveKsanakaHome()})
-  --delay         pause between steps in ms (default 250)
+  --backend        backend to exercise (default: auto — ksanaka when detected)
+  --state-file     state-file: state file (default: ${defaultStateFile()})
+  --ksanaka-home   ksanaka: data root (default: ${resolveKsanakaHome()})
+  --ksanaka-python ksanaka: interpreter with codex_lamp installed
+  --delay          pause between steps in ms (default 250)
+  --hold           ms to wait for daemon->lamp connect (default 9000)
 `);
 }
 
@@ -58,7 +58,6 @@ function parseArgs(argv) {
   const args = {
     backend: 'auto',
     stateFile: defaultStateFile(),
-    daemon: null,
     ksanakaHome: null,
     ksanakaPython: null,
     delayMs: 250,
@@ -68,7 +67,6 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === '--backend') args.backend = argv[++i];
     else if (arg === '--state-file') args.stateFile = argv[++i];
-    else if (arg === '--daemon') args.daemon = argv[++i];
     else if (arg === '--ksanaka-home') args.ksanakaHome = argv[++i];
     else if (arg === '--ksanaka-python') args.ksanakaPython = argv[++i];
     else if (arg === '--delay') args.delayMs = Number(argv[++i]);
@@ -163,11 +161,11 @@ async function main() {
     idleDelayMs: 0,
     sweepMs: 60_000,
     ksanaka: { home: args.ksanakaHome ?? undefined, python: args.ksanakaPython ?? undefined },
-    daemon: { autoStart: true, path: args.daemon ?? undefined, pidFile: '/tmp/codex_lamp_daemon.pid' },
   });
 
-  // Observable: loopbrew writes the state file; ksanaka persists
-  // effective_state.json under its data root (aggregated by its own daemon).
+  // Observable: the state-file backend writes the plain state file; ksanaka
+  // persists effective_state.json under its data root (aggregated by its
+  // own daemon).
   const ksanakaHome = args.ksanakaHome || process.env.CODEX_LAMP_HOME
     || join(homedir(), 'Library', 'Application Support', 'CodexLamp');
   const observable = args.backend === 'ksanaka'
@@ -195,8 +193,8 @@ async function main() {
     } else {
       console.log('⚠ daemon not confirmed connected (BLE off? no lamp?) — continuing store-level verification only');
     }
-  } else if (args.backend === 'loopbrew') {
-    console.log(args.daemon ? `daemon: ${args.daemon} (auto-started if not running)` : 'daemon: none (state file only)');
+  } else if (args.backend === 'state-file') {
+    console.log('state-file backend: writes the state file; no daemon is managed');
   }
   console.log('');
 
