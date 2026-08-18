@@ -27,6 +27,25 @@ DSH host 会话事件 (session/event)
 ksanaka 后端复用你已装的 daemon 与 BLE 连接（`<home>/venv/bin/python3 -m codex_lamp.daemon`），
 不重新实现锁与聚合——`python/ksanaka_bridge.py` 只是把会话状态喂给它的 StateStore。
 
+## 没有 codex-lamp 也能用吗？
+
+**能。** `dsh-lamp` 本身不依赖任何 codex-lamp 安装——它只负责「把 DSH 会话事件变成状态」，
+灯控那半边（daemon + BLE + Moonside 灯）才是 codex-lamp 的事。按灯控程度分三档：
+
+| 场景 | 行为 | 你需要做什么 |
+| --- | --- | --- |
+| **完全不装 codex-lamp** | `auto` 探测不到 ksanaka 安装，自动退回 `loopbrew` 后端，把状态写进 `/tmp/codex_lamp_state`（宿主日志会提示 "no codex-lamp daemon found; writing state file only"） | 什么都不用装。状态文件照样产生，可被任何程序消费：`tail -f /tmp/codex_lamp_state`、喂给自定义脚本、或者以后再加灯 |
+| **想点亮 Moonside 灯（轻量）** | 同上，但把 [loopbrew/codex-lamp](https://github.com/loopbrew/codex-lamp) 的单个 `codex_lamp_daemon.py` 放到 `~/.codex/codex-lamp/`（或设 `CODEX_LAMP_DAEMON` 指向它），插件会自动拉起 | `python3 -m pip install bleak` + 通电的 Moonside 灯 + macOS 蓝牙权限 |
+| **想点亮灯 + 顺便给 Codex 用** | 装 [ksanaka/codex-lamp](https://github.com/ksanaka/codex-lamp)，`auto` 探测到后走 ksanaka 后端，DSH 与 Codex 共用一盏灯 | 按 codex-lamp 的安装说明装好即可 |
+
+补充说明：
+
+- `auto` 探测的是 `~/Library/Application Support/CodexLamp/`（macOS 默认）下是否存在
+  `config.json` 或 `sessions/`。Linux 用户没有这个目录，会自然落到 loopbrew 后端，
+  也可用 `CODEX_LAMP_HOME` 或 `ksanaka.home` 配置指定位置。
+- 想要某条路径，也可以显式 `backend: ksanaka | loopbrew | none`，不依赖探测。
+- 无论哪档，插件都 fail-open：灯控半边缺失/失败绝不影响 DSH 本身。
+
 ## 状态映射
 
 | DSH 会话事件 | 灯状态 | 说明 |
