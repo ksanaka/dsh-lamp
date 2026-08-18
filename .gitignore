@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# logs / runtime artifacts
+*.log
+*.pid
+*.lock
+*.tmp
+
+# macOS
+.DS_Store
+
+# test / demo scratch
+/tmp/
