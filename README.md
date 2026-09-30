@@ -65,7 +65,9 @@ ksanaka 后端复用你已装的 daemon 与 BLE 连接（`<home>/venv/bin/python
 
 ## 安装
 
-### 1. 把插件装进 web profile
+### 方式 A：CLI / web profile（`dsh web`）
+
+#### 1. 把插件装进 web profile
 
 从 GitHub 安装：
 
@@ -79,7 +81,7 @@ dsh plugin --profile web add github:ksanaka/dsh-lamp
 dsh plugin --profile web add /absolute/path/to/dsh-lamp
 ```
 
-### 2. 在 profile 的 patch 层注册插件
+#### 2. 在 profile 的 patch 层注册插件
 
 编辑 `~/.dsh/profiles/web/cordis.patch.yml`，追加：
 
@@ -94,14 +96,14 @@ dsh plugin --profile web add /absolute/path/to/dsh-lamp
         # 其余配置见下方「配置项」
 ```
 
-### 3. 准备灯控 daemon
+#### 3. 准备灯控 daemon
 
 - **ksanaka（本机默认路径）**：什么都不用做——插件自动找到
   `~/Library/Application Support/CodexLamp/venv/bin/python3`，按需拉起
   `python -m codex_lamp.daemon` 驱动你的灯。可配 `ksanaka.home` / `ksanaka.python` 覆盖。
 - **只用 state-file**：不需要 daemon，状态文件照写，用任何方式消费它。
 
-### 4. 重启
+#### 4. 重启
 
 ```bash
 # 停掉当前 dsh web，再重新启动
@@ -118,6 +120,41 @@ tail -f ~/Library/Application\ Support/CodexLamp/logs/daemon.log
 # state-file 后端：
 cat /tmp/dsh_lamp_state
 ```
+
+### 方式 B：桌面端（DeepSeek Harness.app）
+
+桌面端**不用 web profile**，它自己创建一个名为 `desktop` 的独立 profile
+（`~/.dsh/profiles/desktop/`），并且它的 Settings → Plugins 页面只提供插件的查看/配置、
+没有「添加插件」按钮，所以手动三步即可（插件无任何 npm 依赖，不用 pnpm）：
+
+```bash
+# 1. 软链进 desktop profile 的 node_modules
+mkdir -p ~/.dsh/profiles/desktop/node_modules
+ln -sfn /absolute/path/to/dsh-lamp ~/.dsh/profiles/desktop/node_modules/dsh-lamp
+```
+
+```jsonc
+// 2. 在 ~/.dsh/profiles/desktop/package.json 的 dependencies 里登记
+{ "dependencies": { "dsh-lamp": "link:/absolute/path/to/dsh-lamp" } }
+```
+
+```yaml
+# 3. 在 ~/.dsh/profiles/desktop/cordis.patch.yml 末尾追加（与 web profile 完全相同）
+- insert:
+    - id: lamp
+      name: dsh-lamp
+      config:
+        stateFile: /tmp/dsh_lamp_state
+```
+
+实测：桌面端会**热重载 patch 层**——写入条目后约 4 秒插件即生效，会话事件立刻开始驱动灯，
+**无需重启 App**。若你的版本没有热重载，重启桌面端即可。
+
+> 兼容性：已在桌面端 **0.2.0-rc.2** 上实测通过（`session/event`、`session/created`、
+> `session/disposed`、事件词汇与数据结构均与 0.1.x 一致；0.2 新增的插件兼容性校验对
+> 未声明 `peerDependencies` 的插件直接放行，dsh-lamp 正好不声明）。
+> 桌面端与 `dsh web` 各自运行一个 profile，但写入的是同一个 ksanaka StateStore——
+> 两边的会话活动会按优先级聚合到同一盏灯。
 
 ## 配置项
 
